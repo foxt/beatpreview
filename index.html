@@ -1,0 +1,196 @@
+<head>
+    <title>BeatViewer.js</title>
+    <style>
+    
+    #map {
+        position:fixed;
+        top:0;
+        left:0;
+        z-index: -1;
+    }
+    audio {
+        position:fixed;
+        bottom:0;
+        width:100vw;
+    }
+    #controls {
+        position:fixed;
+        text-align: right;
+        right:0;
+    }
+    body {
+        padding: 0;
+    }
+    </style>
+</head>
+
+<body>
+    <audio controls></audio>
+    <div id="controls">
+        <select onchange="changeBeatmap()"></select>
+    </div>
+    <script src="./jszip.js"></script>
+    <script src="./stats.js"></script>
+    <script src="./three.min.js"></script>
+    <script>
+        alert("Legal Warning: BeatViewer.js is not affiliated, endorsed or developed by Beat Games (the original developers of Beat Saber) and is 100% a fan project.\n\nPlace a hash at the end of the URL to load a beatmap from Beatsaver like: 'beatviewer#570' would load BeatSaver song #570")
+        var audio = document.querySelector("audio")
+        var data = {"_version":"2.0.0","_events":[],"_notes":[],"_obstacles":[]}
+        //direction testing: 
+        //var data= {"_version":"2.0.0","_events":[],"_notes":[{"_time":0,"_lineIndex":0,"_lineLayer":0,"_type":0,"_cutDirection":6},{"_time":0,"_lineIndex":1,"_lineLayer":0,"_type":0,"_cutDirection":1},{"_time":0,"_lineIndex":2,"_lineLayer":0,"_type":0,"_cutDirection":7},{"_time":0,"_lineIndex":0,"_lineLayer":1,"_type":0,"_cutDirection":2},{"_time":0,"_lineIndex":1,"_lineLayer":1,"_type":0,"_cutDirection":8},{"_time":0,"_lineIndex":2,"_lineLayer":1,"_type":0,"_cutDirection":3},{"_time":0,"_lineIndex":0,"_lineLayer":2,"_type":0,"_cutDirection":4},{"_time":0,"_lineIndex":1,"_lineLayer":2,"_type":0,"_cutDirection":0},{"_time":0,"_lineIndex":2,"_lineLayer":2,"_type":0,"_cutDirection":5}],"_obstacles":[],"_customData":{"_bookmarks":[]}}
+        // obsticle:
+        //var data = {"_version":"2.0.0","_events":[],"_notes":[],"_obstacles":[{"_time":-1,"_duration":1,"_type":1,"_lineIndex":3,"_width":1},{"_time":1,"_duration":1,"_type":0,"_lineIndex":0,"_width":1},{"_time":2,"_duration":1,"_type":1,"_lineIndex":2,"_width":2},{"_time":32,"_duration":1,"_type":0,"_lineIndex":1,"_width":1}],"_customData":{"_bookmarks":[]}}
+        var songData = {} 
+        const rotationMap = {
+            0: 0,
+            1: Math.PI,
+            2: 270 * Math.PI / 180,
+            3: 90 * Math.PI / 180,
+            4: 315 * Math.PI / 180,
+            5: 1,
+            6: 225 * Math.PI / 180,
+            7: 135 * Math.PI / 180,
+            8: 0, // any direction
+        }
+        const offset = 2
+
+        
+
+        function noteToTHREE(note) {
+            var color = 0x00FF00
+            if (note._type == 0) {
+                color = 0xFF0000 //red
+            } else if (note._type == 1) {
+                color = 0x0000FF // blue
+            } else if (note._type == 3) {
+                color = 0x222222 // spikey things
+            } else {
+                console.log(note._type)
+            }
+
+            var geometry = new THREE.BoxGeometry( 0.7, 0.7, 0.75 );
+            var material = new THREE.MeshBasicMaterial( { color: color, map: arrowTex,
+    opacity: 0.9,
+    transparent: true} );
+            
+            var materialColor = new THREE.MeshBasicMaterial( { color: color,
+    opacity: 0.7,
+    transparent: true} );
+            if (note._type == 3 || note._cutDirection == 8) { material = materialColor }
+            const materials = [
+                materialColor,materialColor,materialColor,materialColor,materialColor,material
+            ];
+            
+            var cube = new THREE.Mesh( geometry, materials );
+            cube.position.set(-note._lineIndex, note._lineLayer, note._time )
+            cube.rotation.z = rotationMap[note._cutDirection]
+            return cube
+        }
+
+        function obstacleToTHREE(note) {
+
+            var geometry = new THREE.BoxGeometry( note._width, 0.7, note._duration );
+            
+            var material = new THREE.MeshBasicMaterial( { color: 0xFF0000} );
+            
+            var cube = new THREE.Mesh( geometry, material );
+            cube.position.set(-note._lineIndex, 0, note._time + 5)
+            return cube
+        }
+
+        function removeInvisible() {
+            for (var obj of scene.children) {
+                obj.visible = obj.position.z > camera.position.z + offset
+            }
+        }
+        
+        const loader = new THREE.TextureLoader();
+        const arrowTex = loader.load('arrow.jpg')
+
+        function initTHREE() {
+            console.group("Creating renderer")
+            console.log("Initializing")
+            while (document.querySelector("#map")) {
+                document.querySelector("#map").remove()
+            }
+            var scene = new THREE.Scene();
+            var camera = new THREE.PerspectiveCamera( 75, window.innerWidth/window.innerHeight, 0.1, 1000 );
+
+            console.log("Creating renderer")
+            var renderer = new THREE.WebGLRenderer();
+            window.renderer = renderer
+            renderer.setSize( window.innerWidth, window.innerHeight );
+            renderer.domElement.id = "map"
+            document.body.appendChild( renderer.domElement );
+
+            console.log("Creating notes")
+            for (var note of data._notes) {
+                scene.add(noteToTHREE(note))
+            }
+            for (var obstacle of data._obstacles) {
+                //scene.add(obstacleToTHREE(obstacle))
+            }
+            
+            console.log("Finishing up")
+            camera.rotation.y = Math.PI
+            camera.position.x = -1.5;
+            camera.position.y = 1;
+            camera.far = 7
+            camera.updateProjectionMatrix()
+
+            
+            var animate = function () {
+                stats.begin()
+                camera.position.z = (audio.currentTime * (songData._beatsPerMinute / 60))  - offset;
+                removeInvisible()
+
+                renderer.render( scene, camera );
+                stats.end()
+                requestAnimationFrame( animate );
+            };
+            window.camera = camera
+            window.scene = scene
+            console.groupEnd()
+            animate();
+            return [scene,camera]
+        }
+
+        async function download(file) {
+            var ftch = await fetch(file)
+            window.zip = await JSZip.loadAsync(ftch.blob())
+
+            songData = JSON.parse(await zip.file("info.dat").async("string"))
+            var options = ``
+            for (var mapsets of songData._difficultyBeatmapSets) {
+                for (var map of mapsets._difficultyBeatmaps) {
+                    options += `<option value="${map._beatmapFilename}">${map._difficulty} (${mapsets._beatmapCharacteristicName})`
+                }
+            }
+            document.querySelector("select").innerHTML = options
+            data = JSON.parse(await zip.file(songData._difficultyBeatmapSets[0]._difficultyBeatmaps[0]._beatmapFilename).async("string"))
+
+            var b64 = await zip.file(songData._songFilename).async("base64")
+            audio.src = "data:audio/ogg;base64," + b64
+            audio.play()
+
+            window.stats = new Stats();
+            stats.showPanel( 0 ); // 0: fps, 1: ms, 2: mb, 3+: custom
+            document.body.appendChild( stats.dom );
+            initTHREE()
+            
+        }
+        async function changeBeatmap() {
+            data = JSON.parse(await zip.file(document.querySelector("select").value).async("string"))
+            initTHREE()
+        }
+        download(location.hash.length > 1 ? "https://beatsaver.com/api/download/key/" + location.hash.replace("#","") :"only-now_20200117T0824.zip")
+        window.onhashchange = function() {
+            location.reload()
+        }
+        window.onresize = function() {
+            renderer.setSize( window.innerWidth, window.innerHeight )
+            camera.aspect = window.innerWidth/window.innerHeight
+            camera.updateProjectionMatrix()
+        }
+    </script>
+</body>
